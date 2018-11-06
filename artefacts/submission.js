@@ -4,7 +4,7 @@ module.exports = `<None xmlns:ev="http://www.w3.org/2001/xml-events" xmlns:orx="
   <today>2018-10-25</today>
   <imei>355217064440184</imei>
   <demographic>
-    <name>Test</name>
+    <name>deployment-test</name>
     <nationality/>
   </demographic>
   <weather>
