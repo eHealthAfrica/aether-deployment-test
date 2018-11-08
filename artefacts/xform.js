@@ -1,6 +1,6 @@
 module.exports = `<h:html xmlns=\"http://www.w3.org/2002/xforms\" xmlns:ev=\"http://www.w3.org/2001/xml-events\" xmlns:h=\"http://www.w3.org/1999/xhtml\" xmlns:jr=\"http://openrosa.org/javarosa\" xmlns:odk=\"http://www.opendatakit.org/xforms\" xmlns:orx=\"http://openrosa.org/xforms\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">
   <h:head>
-    <h:title>Birds</h:title>
+    <h:title>AetherDeploymentTest</h:title>
     <model>
       <itext>
         <translation default=\"true()\" lang=\"default\">
@@ -103,7 +103,7 @@ module.exports = `<h:html xmlns=\"http://www.w3.org/2002/xforms\" xmlns:ev=\"htt
         </translation>
       </itext>
       <instance>
-        <None id=\"Birds\" version=\"20181026\">
+        <None id=\"AetherDeploymentTest\" version=\"20181026\">
           <start/>
           <end/>
           <today/>

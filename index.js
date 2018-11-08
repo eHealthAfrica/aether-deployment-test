@@ -1,9 +1,25 @@
 require('dotenv').config()
+const util = require('util')
 const rp = require('request-promise-native')
 const uuidv1 = require('uuid/v1')
+const program = require('commander')
 
 const xform = require('./artefacts/xform.js')
-const submission = require('./artefacts/submission.js')
+const rawSubmission = require('./artefacts/submission.js')
+
+// program
+//   .option('-c, --submission-count', 'Number of submissions to make', parseInt, 5)
+//   .option('-i, --submission-interval', 'Interval between submissions (in ms)', parseInt, 500)
+//   .parse(process.argv)
+
+// console.log(`Count: ${program.submissionCount}`)
+// console.log(`Interval: ${program.submissionInterval}`)
+// console.log(program.args)
+
+program
+  .option('-c, --submission-count [number]', 'Number of submissions to make', 1)
+  .option('-i, --submission-interval [number]', 'Interval between submissions in ms', 500)
+  .parse(process.argv);
 
 const urls = {
   odk: process.env.ODK_URL,
@@ -17,9 +33,21 @@ const tokens = {
 
 let surveyorId, projectId, xFormId
 
+const setTimeoutPromise = util.promisify(setTimeout)
+
+const log = (logText, logLevel = 0) => {
+  if (logLevel > 0) {
+    const d = new Date()
+    console.log(d.getHours().toString().padStart(2, '0') +
+      ':' + d.getMinutes().toString().padStart(2, '0') +
+      ':' + d.getSeconds().toString().padStart(2, '0') + ' ' + logText)
+  }
+}
+
 const generateOptions = (module, entity, payload, method, id, pathExtension) => {
+  const plural = entity == 'entity' ? 'entities' : `${entity}s`
   let options = {
-    uri: `${urls[module]}/${entity}s/${id ? id + '/' : ''}${pathExtension ? pathExtension + '/' : ''}`,
+    uri: `${urls[module]}/${plural}/${id ? id + '/' : ''}${pathExtension ? pathExtension + '/' : ''}`,
     method: method || 'POST',
     headers: {
       'Authorization': 'Token ' + tokens[module]
@@ -49,6 +77,7 @@ const deleteSurveyor = () => {
 }
 
 const createProject = () => {
+  log('Creating project')
   const options = generateOptions('odk', 'project', {
     'name': 'deployment-test',
     'surveyors': [ surveyorId ]
@@ -71,6 +100,7 @@ const deleteKernelProject = () => {
 }
 
 const createXForm = (projectId) => {
+  log(`Creating XForm (project: ${projectId})`)
   const options = generateOptions('odk', 'xform', {
     'title': 'deployment-test',
     'xml_data': xform,
@@ -83,11 +113,14 @@ const createXForm = (projectId) => {
 }
 
 const propagate = () => {
+  log(`Propagating (project: ${projectId})`)
   const options = generateOptions('odk', 'project', {}, 'PATCH', projectId, 'propagate')
   return rp(options)
 }
 
 const submitData = () => {
+  log('Submitting data')
+  const uuid = uuidv1()
   const base64EncodedData = new Buffer('deployment-test:deployment-test').toString('base64')
   const options = {
     uri: urls.odk + '/submission',
@@ -97,13 +130,13 @@ const submitData = () => {
     },
     formData: {
       'xml_submission_file': {
-        value: submission.replace('#!uuid', uuidv1()),
+        value: rawSubmission.replace('#!uuid', uuid),
         options: {
           filename: 'xml_submission_file'
         }
       },
       'attachment_test':  {
-        value: submission,
+        value: rawSubmission,
         options: {
           filename: 'attachment_test'
         }
@@ -111,30 +144,35 @@ const submitData = () => {
     }
   }
   return rp(options)
+    .then(() => uuid)
 }
 
-const checkSubmission = () => {
+const checkSubmission = (uuid) => {
+  log(`Checking submission ${uuid}`)
   const options = generateOptions('kernel', 'submission', false, 'GET')
-  options.uri += '?project=' + projectId
+  options.uri += '?payload__meta__instanceID=uuid:' + uuid
+    + '&project=' + projectId
   return rp(options)
     .then(response => {
       if (response.count !== 1) {
         console.error('Submission not found (Project: ' + projectId + ')')
         throw new Error()
       }
-      return response.results[0].attachments
-        .find(a => a.name === 'attachment_test')
-        .url
+      return response.results[0]
     })
 }
 
-const checkAttachment = (url) => {
-  const isBucket = url.indexOf('/media/') === -1
+const checkAttachment = (submission) => {
+  log(`Checking attachment ${submission.id}`)
+  let attachmentUrl = submission.attachments
+    .find(a => a.name === 'attachment_test')
+    .url
+  const isBucket = attachmentUrl.indexOf('/media/') === -1
   if (!isBucket) {
-    url = url.replace('/media/', '/media-basic/')
+    attachmentUrl = attachmentUrl.replace('/media/', '/media-basic/')
   }
   const options = {
-    uri: url
+    uri: attachmentUrl
   }
   if (!isBucket) {
     const base64EncodedData = new Buffer('admin:' + process.env.KERNEL_ADMIN_PASSWORD).toString('base64')
@@ -142,17 +180,52 @@ const checkAttachment = (url) => {
       'Authorization': 'Basic ' + base64EncodedData
     }
   }
-  rp(options)
+  return rp(options)
     .then(attachment => {
-      if (attachment === submission) {
-        console.log('Round trip completed 🚀')
+      if (attachment === rawSubmission) {
+        return submission
       } else {
         throw new Error(attachment)
       }
     })
 }
 
+const checkEntity = (submission) => {
+  log(`Checking entity ${submission.id}`)
+  let options = generateOptions('kernel', 'entity', false, 'GET')
+  options.uri +=  '?submission=' + submission.id
+  return rp(options)
+    .then(response => {
+      if (response.count !== 1) {
+        throw new Error('Entity not found (Submission: ' + submission.id + ')')
+      }
+      return true
+    })
+}
+
+const submitAndCheck = () => {
+  return submitData()
+    .then(checkSubmission)
+    .then(checkAttachment)
+    .then(checkEntity)
+    .then(() => {
+      log('Round trip completed 🚀', 1)
+      return true
+    })
+}
+
+const submissions = () => {
+  log('program.submissionCount: ' + program.submissionCount)
+  const totalSubmissions = [...Array(Number(program.submissionCount)).keys()].map(key => {
+    return setTimeoutPromise(key * Number(program.submissionInterval))
+      .then(submitAndCheck)
+  })
+  log(totalSubmissions.length + ' submissions')
+  return Promise.all(totalSubmissions)
+}
+
 const tearDown = () => {
+  log('Tear down')
   return deleteSurveyor()
     .then(deleteProject)
     .then(deleteKernelProject)
@@ -162,11 +235,9 @@ createSurveyor()
   .then(createProject)
   .then(createXForm)
   .then(propagate)
-  .then(submitData)
-  .then(checkSubmission)
-  .then(checkAttachment)
+  .then(submissions)
   .then(tearDown)
   .catch(err => {
-    console.log(err)
+    console.error(err)
     tearDown()
   })
