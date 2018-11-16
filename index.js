@@ -31,26 +31,26 @@ const tokens = {
   kernel: process.env.KERNEL_ADMIN_TOKEN
 }
 
-let surveyorId, projectId, xFormId
+let surveyorId, projectId
 
 const setTimeoutPromise = util.promisify(setTimeout)
 
 const log = (logText, logLevel = 0) => {
   if (logLevel > 0) {
     const d = new Date()
-    console.log(d.getHours().toString().padStart(2, '0') +
-      ':' + d.getMinutes().toString().padStart(2, '0') +
-      ':' + d.getSeconds().toString().padStart(2, '0') + ' ' + logText)
+    console.log(d.toLocaleTimeString('de-DE') + ' ' + logText)
   }
 }
 
-const generateOptions = (module, entity, payload, method, id, pathExtension) => {
+const generateOptions = (aetherModule, entity, payload, method, id, pathExtension) => {
   const plural = entity == 'entity' ? 'entities' : `${entity}s`
   let options = {
-    uri: `${urls[module]}/${plural}/${id ? id + '/' : ''}${pathExtension ? pathExtension + '/' : ''}`,
+    uri: `${urls[aetherModule]}/${plural}/` +
+      (id ? id + '/' : '') +
+      (pathExtension ? pathExtension + '/' : ''),
     method: method || 'POST',
     headers: {
-      'Authorization': 'Token ' + tokens[module]
+      'Authorization': 'Token ' + tokens[aetherModule]
     },
     json: true
   }
@@ -87,6 +87,9 @@ const createProject = () => {
       projectId = response.project_id
       return projectId
     })
+    .catch(err => {
+      throw new Error('Failed to create project: ' + err)
+    })
 }
 
 const deleteProject = () => {
@@ -107,9 +110,6 @@ const createXForm = (projectId) => {
     'project': projectId
   })
   return rp(options)
-    .then(response => {
-      xFormId = response.id
-    })
 }
 
 const propagate = () => {
@@ -155,8 +155,7 @@ const checkSubmission = (uuid) => {
   return rp(options)
     .then(response => {
       if (response.count !== 1) {
-        console.error('Submission not found (Project: ' + projectId + ')')
-        throw new Error()
+        throw new Error('Submission not found (Project: ' + projectId + ')')
       }
       return response.results[0]
     })
@@ -229,6 +228,9 @@ const tearDown = () => {
   return deleteSurveyor()
     .then(deleteProject)
     .then(deleteKernelProject)
+    .catch(err => {
+      console.error('Failed to tear down: ' + err)
+    })
 }
 
 createSurveyor()
