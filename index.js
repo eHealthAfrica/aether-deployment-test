@@ -230,6 +230,7 @@ const tearDown = () => {
     .then(deleteKernelProject)
     .catch(err => {
       console.error('Failed to tear down: ' + err)
+      console.log('To clean up manually, delete the Kernel project, the ODK project and the ODK surveyor, all called "deployment-test"')
     })
 }
 
